@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "flood-detection-pipeline"
+version = "0.1.0"
+description = "A pipeline for detecting floods from satellite imagery."
+authors = ["Your Name <you@example.com>"]
+packages = [{include = "flood_detector", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+
+[tool.poetry.group.dev.dependencies]
+pre-commit = "^3.7.1"
+black = "^24.4.2"
+ruff = "^0.4.4"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
