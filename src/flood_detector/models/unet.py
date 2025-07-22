@@ -62,15 +62,18 @@ def build_unet_model(
     input_shape=(config.IMG_HEIGHT, config.IMG_WIDTH, config.IMG_CHANNELS)
 ):
     """
-    Builds the U-Net model architecture.
+    Builds an enhanced U-Net model architecture with
+    improved stability features.
+    Includes gradient clipping, dropout regularization,
+    and robust loss functions.
 
     Args:
         input_shape (tuple): The shape of the input images.
 
     Returns:
-        tf.keras.Model: The compiled U-Net model.
+        tf.keras.Model: The compiled U-Net model with enhanced stability.
     """
-    print("--- Building U-Net Model ---")
+    print("--- Building Enhanced U-Net Model ---")
     inputs = layers.Input(shape=input_shape)
 
     # --- Encoder Path ---
@@ -103,16 +106,79 @@ def build_unet_model(
 
     model = models.Model(inputs=[inputs], outputs=[outputs])
 
-    # --- Compile the Model ---
-    # We use Adam optimizer and binary cross-entropy for the loss function.
-    # Metrics can include accuracy, IoU, etc.
-    model.compile(
-        optimizer=optimizers.Adam(learning_rate=config.UNET_LEARNING_RATE),
-        loss="binary_crossentropy",
-        metrics=["accuracy", tf.keras.metrics.MeanIoU(num_classes=2)],
+    # --- Enhanced Compilation with Gradient Clipping ---
+    # Custom optimizer with gradient clipping to prevent exploding gradients
+    # Using clipnorm for more stable gradient control
+    optimizer = optimizers.Adam(
+        learning_rate=config.UNET_LEARNING_RATE,
+        clipnorm=1.0,  # Clip gradients by norm to prevent explosion
     )
 
-    print("--- U-Net Model Built and Compiled Successfully ---")
+    # Enhanced loss function with label smoothing for stability
+    def stable_binary_crossentropy(y_true, y_pred):
+        """Binary crossentropy with label smoothing and numerical stability"""
+        # Ensure consistent data types
+        y_true = tf.cast(y_true, tf.float32)
+        y_pred = tf.cast(y_pred, tf.float32)
+
+        # Add small epsilon to prevent log(0)
+        epsilon = tf.keras.backend.epsilon()
+        y_pred = tf.clip_by_value(y_pred, epsilon, 1.0 - epsilon)
+
+        # Apply label smoothing (0.1 smoothing factor)
+        y_true_smooth = y_true * 0.9 + 0.05
+
+        return tf.keras.backend.binary_crossentropy(y_true_smooth, y_pred)
+
+    # Custom binary accuracy metric for flood detection
+    def stable_binary_accuracy(y_true, y_pred):
+        """Binary accuracy metric that works with label smoothing"""
+        # Ensure consistent data types
+        y_true = tf.cast(y_true, tf.float32)
+        y_pred = tf.cast(y_pred, tf.float32)
+
+        # For label-smoothed targets, use threshold-based comparison
+        # Since our labels are smoothed to [0.025, 0.975] range
+        y_true_binary = tf.cast(y_true > 0.5, tf.float32)
+        y_pred_binary = tf.cast(y_pred > 0.5, tf.float32)
+
+        # Calculate accuracy
+        correct_predictions = tf.cast(
+            tf.equal(y_true_binary, y_pred_binary), tf.float32
+        )
+
+        return tf.reduce_mean(correct_predictions)
+
+    # Custom IoU metric that's more stable
+    def stable_iou(y_true, y_pred):
+        """Intersection over Union with numerical stability"""
+        # Ensure consistent data types
+        y_true = tf.cast(y_true, tf.float32)
+        y_pred = tf.cast(y_pred, tf.float32)
+
+        # Convert to binary using threshold (works with label smoothing)
+        y_true_binary = tf.cast(y_true > 0.5, tf.float32)
+        y_pred_binary = tf.cast(y_pred > 0.5, tf.float32)
+
+        # Calculate intersection and union
+        intersection = tf.reduce_sum(y_true_binary * y_pred_binary)
+        union = (
+            tf.reduce_sum(y_true_binary) + tf.reduce_sum(y_pred_binary) - intersection
+        )
+
+        # Add small epsilon to prevent division by zero
+        epsilon = tf.keras.backend.epsilon()
+        iou = (intersection + epsilon) / (union + epsilon)
+
+        return iou
+
+    model.compile(
+        optimizer=optimizer,
+        loss=stable_binary_crossentropy,
+        metrics=[stable_binary_accuracy, stable_iou],
+    )
+
+    print("--- Enhanced U-Net Model Built and Compiled Successfully ---")
     model.summary()
 
     return model

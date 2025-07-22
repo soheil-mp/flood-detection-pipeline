@@ -26,14 +26,14 @@ Usage for U-Net:
 import argparse
 import os
 
-from flood_detector import config
-from flood_detector.data_handler import (
+from . import config
+from .data_handler import (
     read_geotiff,
     create_rf_training_data,
     get_unet_data_generators,
 )
-from flood_detector.models.random_forest import train_rf_model, save_rf_model
-from flood_detector.models.unet import build_unet_model
+from .models.random_forest import train_rf_model, save_rf_model
+from .models.unet import build_unet_model
 
 
 def train_random_forest(args):
@@ -68,44 +68,231 @@ def train_random_forest(args):
 
 def train_unet(args):
     """
-    Manages the training workflow for the U-Net model.
+    Manages the enhanced training workflow for the U-Net model with
+    robust training practices. Includes gradient clipping, learning rate
+    scheduling, early stopping, and NaN monitoring.
     """
-    print("--- Starting U-Net Training Workflow ---")
+    print("--- Starting Enhanced U-Net Training Workflow ---")
+
+    # Import required modules for advanced training
+    from tensorflow.keras import callbacks
+    import numpy as np
+    from .training_monitor import (
+        TrainingDiagnostics,
+        AdvancedTrainingCallbacks,
+        create_training_visualization,
+    )
+    from .inference_callback import create_inference_callback
 
     # 1. Prepare data generators
     print("Preparing data generators...")
-    # Assume the training data dir contains 'train' and 'val' subdirectories
     train_dir = os.path.join(args.training_data_dir, "train")
     val_dir = os.path.join(args.training_data_dir, "val")
 
     if not os.path.isdir(train_dir) or not os.path.isdir(val_dir):
         raise FileNotFoundError(
-            f"Training data directory must contain 'train' and \
-                'val' subdirectories. Check path: {args.training_data_dir}"
+            f"Training data directory must contain 'train' and 'val' "
+            f"subdirectories. Check path: {args.training_data_dir}"
         )
 
     train_generator, val_generator = get_unet_data_generators(
         train_dir, val_dir, args.batch_size
     )
 
-    # 2. Build model
+    # 2. Run comprehensive diagnostics
+    print("Running pre-training diagnostics...")
+
+    # Check data quality
+    train_diagnostics = TrainingDiagnostics.check_data_quality(train_generator)
+    val_diagnostics = TrainingDiagnostics.check_data_quality(val_generator, 3)
+
+    if train_diagnostics["issues"] or val_diagnostics["issues"]:
+        print(
+            "WARNING: Data quality issues \
+            detected. Proceeding with caution."
+        )
+        for issue in train_diagnostics["issues"] + val_diagnostics["issues"]:
+            print(f"  - {issue}")
+
+    # 3. Build enhanced model with better stability
     model = build_unet_model()
 
-    # 3. Train model
-    print("Starting U-Net model training...")
-    history = model.fit(
-        train_generator, validation_data=val_generator, epochs=args.epochs, verbose=1
-    )
-    history.history["val_loss"][-1]  # Access last validation loss for logging
+    # Test model forward pass
+    forward_test = TrainingDiagnostics.test_model_forward_pass(model, train_generator)
+    if not forward_test["success"]:
+        raise RuntimeError(
+            f"Model forward pass failed: "
+            f"{forward_test.get('error', 'Unknown error')}"
+        )
 
-    # 4. Save model
-    print(f"Saving U-Net model to {args.model_output_path}...")
-    os.makedirs(os.path.dirname(args.model_output_path), exist_ok=True)
-    model.save(args.model_output_path)
+    # 4. Setup advanced training callbacks for stability and monitoring
+    print("Setting up enhanced training callbacks...")
+
+    # Create logs directory
+    log_dir = os.path.join(config.RESULTS_DIR, "training_logs")
+    os.makedirs(log_dir, exist_ok=True)
+
+    # Create TensorBoard subdirectories to prevent directory errors
+    tensorboard_dir = os.path.join(log_dir, "tensorboard")
+    os.makedirs(os.path.join(tensorboard_dir, "train"), exist_ok=True)
+    os.makedirs(os.path.join(tensorboard_dir, "validation"), exist_ok=True)
+
+    # Create CSV file for logger
+    csv_log_path = os.path.join(log_dir, "training_metrics.csv")
+
+    # Ensure CSV file can be created by touching it
+    with open(csv_log_path, "w") as f:
+        f.write("")  # Create empty file
+
+    # Create sample inference directory
+    sample_inference_dir = os.path.join(log_dir, "sample_inference")
+    os.makedirs(sample_inference_dir, exist_ok=True)
+
+    # Enhanced callbacks
+    callback_list = [
+        # Early stopping with best weights restoration
+        callbacks.EarlyStopping(
+            monitor="val_loss",
+            patience=config.UNET_PATIENCE,
+            restore_best_weights=True,
+            verbose=1,
+        ),
+        # Learning rate reduction on plateau
+        callbacks.ReduceLROnPlateau(
+            monitor="val_loss",
+            factor=config.UNET_LR_REDUCTION_FACTOR,
+            patience=config.UNET_LR_REDUCTION_PATIENCE,
+            min_lr=config.UNET_MIN_LEARNING_RATE,
+            verbose=1,
+        ),
+        # Model checkpoint for best model
+        callbacks.ModelCheckpoint(
+            args.model_output_path.replace(".h5", "_best.h5"),
+            monitor="val_loss",
+            save_best_only=True,
+            save_weights_only=False,
+            verbose=1,
+        ),
+        # CSV logger for detailed metrics
+        callbacks.CSVLogger(csv_log_path, append=False),
+        # TensorBoard for visualization
+        callbacks.TensorBoard(
+            log_dir=tensorboard_dir,
+            histogram_freq=1,
+            write_graph=True,
+            write_images=False,
+        ),
+        # Advanced monitoring callbacks
+        AdvancedTrainingCallbacks.get_nan_terminator(),
+        AdvancedTrainingCallbacks.get_comprehensive_logger(log_dir),
+        # Sample inference callback for visual monitoring
+        create_inference_callback(
+            validation_generator=val_generator,
+            output_dir=sample_inference_dir,
+            num_samples=4,
+            save_frequency=1,
+        ),
+    ]
+
+    # 5. Train model with enhanced monitoring
     print(
-        f"U-Net model training complete. \
-        Model saved to {args.model_output_path}"
+        "Starting enhanced U-Net model training with \
+        stability monitoring..."
     )
+    print(
+        f"Training for up to {args.epochs} epochs with \
+            batch size {args.batch_size}"
+    )
+    print(f"Logs will be saved to: {log_dir}")
+
+    try:
+        history = model.fit(
+            train_generator,
+            validation_data=val_generator,
+            epochs=args.epochs,
+            callbacks=callback_list,
+            verbose=1,
+        )
+
+        # Check if training completed successfully
+        if len(history.history["loss"]) == 0:
+            raise ValueError("Training failed - no history recorded")
+
+        # Log training results
+        final_train_loss = history.history["loss"][-1]
+        final_val_loss = history.history["val_loss"][-1]
+
+        print("\nTraining Summary:")
+        print(f"- Final training loss: {final_train_loss:.6f}")
+        print(f"- Final validation loss: {final_val_loss:.6f}")
+        print(f"- Total epochs completed: {len(history.history['loss'])}")
+
+        # Check for potential issues
+        if np.isnan(final_train_loss) or np.isnan(final_val_loss):
+            print(
+                "WARNING: Final loss values contain NaN. \
+                Model may be unstable."
+            )
+
+        # Create training visualization
+        viz_path = os.path.join(log_dir, "training_history.png")
+        create_training_visualization(history, viz_path)
+
+    except Exception as e:
+        print(f"ERROR during training: {e}")
+        print("Attempting to save current model state...")
+        try:
+            emergency_path = args.model_output_path.replace(".h5", "_emergency.h5")
+            model.save(emergency_path)
+            print(f"Emergency model saved to: {emergency_path}")
+        except Exception as save_error:
+            print(f"Failed to save emergency model state: {save_error}")
+        raise
+
+    # 6. Save final model and artifacts
+    print(f"Saving final U-Net model to {args.model_output_path}...")
+    os.makedirs(os.path.dirname(args.model_output_path), exist_ok=True)
+
+    try:
+        model.save(args.model_output_path)
+        print(
+            f"U-Net model training complete. "
+            f"Model saved to {args.model_output_path}"
+        )
+
+        # Save training history for analysis
+        history_path = args.model_output_path.replace(".h5", "_history.npy")
+        np.save(history_path, history.history)
+        print(f"Training history saved to {history_path}")
+
+        # Save final training report
+        report_path = os.path.join(log_dir, "final_report.txt")
+        with open(report_path, "w") as f:
+            f.write("U-Net Training Final Report\n")
+            f.write("=" * 40 + "\n\n")
+            f.write(f"Model saved to: {args.model_output_path}\n")
+            f.write(f"Training epochs: {len(history.history['loss'])}\n")
+            f.write(f"Final training loss: {final_train_loss:.6f}\n")
+            f.write(f"Final validation loss: {final_val_loss:.6f}\n")
+            f.write(
+                f"Best validation loss: \
+                    "
+                f"{min(history.history['val_loss']):.6f}\n"
+            )
+            training_completed_flag = (
+                "Yes"
+                if not (np.isnan(final_train_loss) or np.isnan(final_val_loss))
+                else "No"
+            )
+            f.write(
+                f"\nTraining completed successfully: " f"{training_completed_flag}\n"
+            )
+
+        print(f"Final training report saved to: {report_path}")
+
+    except Exception as e:
+        print(f"ERROR saving model: {e}")
+        raise
 
 
 if __name__ == "__main__":

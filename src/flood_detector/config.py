@@ -54,10 +54,16 @@ IMG_WIDTH = 512
 # For a fused model, this would be the sum of S1 and S2 bands.
 IMG_CHANNELS = 2
 
-# Training hyperparameters
-UNET_LEARNING_RATE = 1e-4
-UNET_BATCH_SIZE = 8  # Adjust based on GPU memory
+# Training hyperparameters - Enhanced for stability
+UNET_LEARNING_RATE = 5e-5  # Reduced from 1e-4 for better stability
+UNET_BATCH_SIZE = 4  # Reduced from 8 to prevent memory issues
 UNET_EPOCHS = 50
+
+# Enhanced training parameters for stability
+UNET_PATIENCE = 10  # Early stopping patience
+UNET_LR_REDUCTION_FACTOR = 0.5  # Learning rate reduction factor
+UNET_LR_REDUCTION_PATIENCE = 5  # Patience for learning rate reduction
+UNET_MIN_LEARNING_RATE = 1e-7  # Minimum learning rate
 
 # --- Random Forest Model Parameters ---
 # Number of trees in the forest

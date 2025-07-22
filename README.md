@@ -14,6 +14,7 @@ A comprehensive, end-to-end pipeline for detecting and mapping floodwater from s
   - [Path B: High-Accuracy (Deep Learning)](#path-b-high-accuracy--research-grade)
 - [Data Sources](#data-sources)
 - [Installation](#installation)
+- [Dataset Acquisition Guide](#dataset-acquisition-guide)
 - [Usage](#usage)
   - [1. Preprocessing](#1-preprocessing)
   - [2. Training a Model](#2-training-a-model)
@@ -96,14 +97,35 @@ This project implements two distinct pathways as outlined in the foundational re
 
 ## Data Sources
 
+### Understanding the Two-Phase Data Strategy
+
+This project operates with a two-phase data approach:
+
+#### **Training Phase (The "Textbook")**
+- **Dataset**: Sen1Floods11 and WorldFloods
+- **Purpose**: These are massive, pre-labeled datasets containing thousands of examples of "water" and "not water" with ground truth labels. Think of these as comprehensive textbooks that teach your model the "language" of what floods look like in satellite imagery. This is the "studying" phase where the model learns flood detection patterns.
+
+#### **Prediction Phase (The "Real-World Application")**
+- **Dataset**: Your own downloaded satellite images (e.g., Limburg flood event)
+- **Purpose**: After your model has "studied" the textbook datasets and become "fluent" in flood detection, you test it on new, unseen events. You provide the trained model with a specific flood event image and ask: "Based on everything you've learned, where is the flood in this image?"
+
+### Data Requirements by Model Type
+
+**⚠️ Important**: The number of images required depends on your chosen approach:
+
+- **Random Forest (Path A)**: Requires **TWO images** - a pre-flood baseline and post-flood image for change detection
+- **U-Net (Path B)**: Requires **ONE image** - only the post-flood scene, as it learns intrinsic water patterns
+
+### Data Sources
+
 -   **Primary Imagery:**
-    -   [Sentinel-1 (SAR)](https://sentinels.copernicus.eu/web/sentinel/missions/sentinel-1)
-    -   [Sentinel-2 (Optical)](https://sentinels.copernicus.eu/web/sentinel/missions/sentinel-2)
+    -   [Sentinel-1 (SAR)](https://sentinels.copernicus.eu/web/sentinel/missions/sentinel-1) - All-weather capability, primary data source
+    -   [Sentinel-2 (Optical)](https://sentinels.copernicus.eu/web/sentinel/missions/sentinel-2) - High-resolution optical data (weather dependent)
 -   **Ancillary Data:**
-    -   [Copernicus DEM](https://registry.opendata.aws/copernicus-dem/)
+    -   [Copernicus DEM](https://registry.opendata.aws/copernicus-dem/) - Digital Elevation Model for topographic analysis
 -   **Training/Benchmark Datasets:**
-    -   [Sen1Floods11](https://github.com/cloudtostreet/Sen1Floods11): For SAR-based models.
-    -   [WorldFloods](https://www.worldfloods.org/): For optical-based models.
+    -   [Sen1Floods11](https://github.com/cloudtostreet/Sen1Floods11): ~14GB dataset for SAR-based models (Sentinel-1)
+    -   [WorldFloods](https://www.worldfloods.org/): ~76GB dataset for optical-based models (Sentinel-2)
 
 ## Installation
 
@@ -116,6 +138,7 @@ This project implements two distinct pathways as outlined in the foundational re
 2.  **Install ESA SNAP:**
     This project relies on the ESA SNAP Engine for SAR preprocessing. Please [download and install SNAP](http://step.esa.int/main/download/snap-download/) and configure the Python interface (`snappy`). Follow the instructions provided by ESA.
 
+TODO: We are using poetry and not conde/venv.
 3.  **Create a Python environment and install dependencies:**
     It is highly recommended to use a virtual environment (e.g., conda or venv).
     ```bash
@@ -142,6 +165,140 @@ This project implements two distinct pathways as outlined in the foundational re
     tqdm
     opencv-python-headless
     ```
+
+## Dataset Acquisition Guide
+
+This section provides a complete A-to-Z guide for downloading both training datasets and satellite imagery for your specific flood events.
+
+### Part 1: Downloading Benchmark Training Datasets
+
+#### A. Sen1Floods11 Dataset (for SAR Models)
+
+The Sen1Floods11 dataset (~14GB) is specifically designed for Sentinel-1 based flood segmentation and is hosted on Google Cloud Storage.
+
+**Prerequisites:**
+1. Install Google Cloud SDK (includes `gsutil` tool):
+   - Download from: https://cloud.google.com/sdk/docs/install
+   - Follow installation instructions for Windows
+
+**Download Steps:**
+```bash
+# Navigate to your project directory
+cd C:\Users\Soheil\Documents\GitHub\flood-detection-pipeline
+
+# Create target directory
+mkdir data\training_data\Sen1Floods11
+
+# Download the complete dataset (this will take time - ~14GB)
+gsutil -m rsync -r gs://sen1floods11 data\training_data\Sen1Floods11\
+```
+
+#### B. WorldFloods Dataset (for Optical Models)
+
+The WorldFloods dataset (~76GB) provides Sentinel-2 optical images and flood masks, hosted on Hugging Face.
+
+**Prerequisites:**
+```bash
+# Install Hugging Face Hub
+pip install huggingface_hub
+```
+
+**Download Steps:**
+```bash
+# Login to Hugging Face (optional but recommended)
+huggingface-cli login
+
+# Create target directory
+mkdir data\training_data\WorldFloods
+
+# Download the dataset
+huggingface-cli download isp-uv-es/WorldFloodsv2 --repo-type dataset --local-dir data\training_data\WorldFloods
+```
+
+### Part 2: Downloading Satellite Imagery for Specific Events
+
+#### Recommended Case Study: July 2021 Limburg Floods, Netherlands
+
+For a powerful case study with clear flood signals, use the July 2021 floods in Limburg province, which caused significant riverine flooding along the Geul and Meuse rivers.
+
+**Target Location:** Valkenburg aan de Geul, Netherlands
+**Coordinates:** 50.8661°N, 5.8308°E
+
+#### A. Create Copernicus Account
+
+1. Navigate to: https://dataspace.copernicus.eu/
+2. Click "Register" in the top-right corner
+3. Fill out registration form and verify your email
+4. Login to your new account
+
+#### B. Search and Download Data
+
+1. **Access the Browser:**
+   - From the main page, select "Explore the data" or launch "Copernicus Browser"
+
+2. **Define Area of Interest:**
+   - Search for "Valkenburg aan de Geul, Netherlands" in the search bar
+   - OR manually draw a rectangle around the area using the drawing tools
+
+3. **Set Search Filters (Left Panel):**
+
+   **For Sentinel-1 (SAR) Data:**
+   ```
+   Mission: Sentinel-1
+   Product Type: GRD (Ground Range Detected)
+   Sensing Period:
+     - Pre-flood: June 1, 2021 - July 10, 2021
+     - Post-flood: July 14, 2021 - July 18, 2021
+   ```
+
+   **For Sentinel-2 (Optical) Data:**
+   ```
+   Mission: Sentinel-2
+   Product Type: Level-2A (or Level-1C)
+   Cloud Cover: 0% - 10% (crucial for usable images)
+   Sensing Period:
+     - Pre-flood: June 1, 2021 - July 10, 2021
+     - Post-flood: July 14, 2021 - July 18, 2021
+   ```
+
+4. **Download Process:**
+   - Click the search button to see available images
+   - Review results by clicking each to see footprint and preview
+   - Select images covering your timeframes (you need at least 2 for Random Forest, 1 for U-Net)
+   - Click download icon for each selected scene
+   - Files will download as .zip archives (several GB each)
+
+5. **Organize Downloaded Data:**
+   ```bash
+   # Move downloaded files to your project structure
+   move *.zip data\raw\
+   ```
+
+### Data Requirements Summary
+
+| Model Type | Training Data | Prediction Data | Notes |
+|------------|---------------|-----------------|-------|
+| **Random Forest** | Sen1Floods11 | 2 images (pre + post flood) | Requires change detection |
+| **U-Net** | Sen1Floods11 | 1 image (post flood only) | Learns intrinsic water patterns |
+| **Optical Models** | WorldFloods | 1-2 images (depending on model) | Weather dependent |
+
+### Troubleshooting Download Issues
+
+**Large File Downloads:**
+- Downloads may take hours due to file sizes (2-8GB per scene)
+- Use stable internet connection and consider downloading overnight
+- If downloads fail, restart from the Copernicus Browser
+
+**Storage Requirements:**
+- Sen1Floods11: ~14GB
+- WorldFloods: ~76GB
+- Raw satellite scenes: ~2-8GB each
+- Ensure adequate disk space before starting downloads
+
+**Authentication Issues:**
+- For Google Cloud: Ensure `gsutil` is properly configured
+- For Hugging Face: Create account and obtain access token if needed
+- For Copernicus: Verify email and ensure account is activated
 
 ## Usage
 
@@ -171,26 +328,37 @@ python src/flood_detector/train.py \
   --model_output_path results/models/rf_model_v1.joblib
 ```
 
-**Example: Training a U-Net model (Path B)**
+**Example: Training a U-Net model (Path B) with Enhanced Monitoring**
 
 ```bash
-python src/flood_detector/train.py \
+# Enhanced U-Net training with visual sample inference monitoring
+poetry run python -m src.flood_detector.train \
   --model_type unet \
   --training_data data/training_data/Sen1Floods11/ \
   --model_output_path results/models/unet_model_v1.h5 \
-  --epochs 50 \
-  --batch_size 16
+  --epochs 10 \
+  --batch_size 1
 ```
+
+**New Feature: Sample Inference During Training**
+The enhanced training pipeline now includes automatic sample inference after each epoch:
+- Generates flood maps from validation samples to visually monitor training progress
+- Saves individual sample results with input/ground truth/prediction comparisons
+- Creates epoch summaries with IoU and accuracy metrics
+- Results saved to `results/training_logs/sample_inference/epoch_XXX/`
 
 ### 3. Running Inference
 
 Use the `predict.py` script to generate a flood map from a preprocessed satellite image.
 
+# TODO: Convert to poetry run
 ```bash
-python src/flood_detector/predict.py \
-  --model_path results/models/unet_model_v1.h5 \
-  --input_image data/processed/post_flood_event.tif \
-  --output_map results/maps/flood_map_event.tif
+# python src/flood_detector/predict.py \
+#   --model_path results/models/unet_model_v1.h5 \
+#   --input_image data/processed/post_flood_event.tif \
+#   --output_map results/maps/flood_map_event.tif
+
+poetry run python -m src.flood_detector.predict --model_path results/models/unet_final_test_best.h5 --post_flood_image data/training_data/Sen1Floods11/train/s1_post/Bolivia_76104_S1Hand.tif --output_map results/maps/flood_map_sample.tif
 ```
 
 ## Evaluation

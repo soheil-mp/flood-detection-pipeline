@@ -1,0 +1,14 @@
+
+*.tif
+*.zip
+*.json
+*.txt
+*.cp
+*.csv
+*.DS_Store
+*.pyc
+*.h5
+*.geojson
+*.png
+*.v2
+*.npy

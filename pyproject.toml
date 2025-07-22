@@ -2,11 +2,18 @@
 name = "flood-detection-pipeline"
 version = "0.1.0"
 description = "A pipeline for detecting floods from satellite imagery."
-authors = ["Your Name <you@example.com>"]
+authors = ["Soheil"]
 packages = [{include = "flood_detector", from = "src"}]
 
 [tool.poetry.dependencies]
-python = "^3.9"
+python = ">=3.11,<4.0"
+numpy = "^2.1"
+rasterio = "^1.4.3"
+scikit-learn = "^1.7.1"
+tensorflow = {extras = ["and-cuda"], version = "^2.19.0"}
+tqdm = "^4.67.1"
+matplotlib = "^3.10.3"
+opencv-python = "^4.12.0.88"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^3.7.1"

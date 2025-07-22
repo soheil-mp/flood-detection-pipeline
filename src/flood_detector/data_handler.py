@@ -174,26 +174,65 @@ class UNetDataGenerator(Sequence):
             np.random.shuffle(self.indexes)
 
     def __data_generation(self, list_ids_temp):
-        "Generates data containing batch_size samples"
+        """
+        Generates data containing batch_size samples with
+        enhanced preprocessing
+        and normalization for numerical stability.
+        """
         X = np.empty((self.batch_size, *self.dim, self.n_channels))
         y = np.empty((self.batch_size, *self.dim, 1))
 
         for i, ID in enumerate(list_ids_temp):
-            # Load S1 image (assuming it's a 2-channel VV/VH tif)
+
+            # Load S1 image
             img_path = os.path.join(self.image_dir, f"{ID}.tif")
             img, _ = read_geotiff(img_path)
 
-            # Load label mask
-            label_path = os.path.join(self.label_dir, f"{ID}.tif")
+            # --- CORRECTED LOGIC ---
+            # Construct the correct label filename from the image ID
+            # This turns '..._S1Hand' or '..._S2Hand' into '..._LabelHand'
+            label_filename = (
+                ID.replace("S1Hand", "LabelHand").replace("S2Hand", "LabelHand")
+                + ".tif"
+            )
+            label_path = os.path.join(self.label_dir, label_filename)
+
+            # Load label mask using the correct path
             label, _ = read_geotiff(label_path)
 
+            # --- Enhanced Data Preprocessing ---
+            # Handle potential NaN or infinite values in the input data
+            img = np.nan_to_num(img, nan=0.0, posinf=0.0, neginf=0.0)
+
+            # Robust normalization for SAR data (typically in dB scale)
+            # Clip extreme values to prevent numerical instability
+            img = np.clip(img, -30, 10)  # Typical range for SAR in dB
+
+            # Normalize to [0, 1] range
+            # Use robust normalization based on percentiles
+            for channel in range(img.shape[2]):
+                channel_data = img[:, :, channel]
+                p1, p99 = np.percentile(channel_data, [1, 99])
+                if p99 > p1:  # Avoid division by zero
+                    img[:, :, channel] = np.clip((channel_data - p1) / (p99 - p1), 0, 1)
+                else:
+                    img[:, :, channel] = 0.0
+
+            # Process labels
             # Sen1Floods11 labels: 1 for water, 0 for non-water, -1 for no-data
             # We will treat no-data as non-water (0) for simplicity in
             # binary classification
             label[label == -1] = 0
 
-            X[i,] = img
-            y[i,] = np.expand_dims(label, axis=-1)
+            # Ensure labels are in correct format and range
+            label = np.clip(label, 0, 1).astype(np.float32)
+
+            # Add small amount of label smoothing to improve training stability
+            # This helps prevent overconfident predictions
+            label_smooth = label * 0.95 + 0.025
+
+            X[i,] = img.astype(np.float32)
+            y[i,] = label_smooth
 
         return X, y
 
