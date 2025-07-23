@@ -10,7 +10,6 @@ import numpy as np
 from tensorflow.keras import callbacks
 import matplotlib.pyplot as plt
 import os
-import cv2
 
 
 class SampleInferenceCallback(callbacks.Callback):
@@ -51,22 +50,54 @@ class SampleInferenceCallback(callbacks.Callback):
         self._prepare_sample_data()
 
     def _prepare_sample_data(self):
-        """Prepare sample data for inference."""
+        """
+        Prepare sample data for inference. Selects
+        'Paraguay_1029191_S1Hand' if available.
+        """
         print(
-            f"Preparing {self.num_samples} sample images for "
-            f"inference monitoring..."
+            "Preparing sample image 'Paraguay_1029191_S1Hand' for "
+            "inference monitoring..."
         )
 
         # Get the first batch from validation generator
         sample_batch = self.validation_generator[0]
         self.sample_images, self.sample_labels = sample_batch
 
-        # Select specified number of samples
-        actual_samples = min(self.num_samples, self.sample_images.shape[0])
-        self.sample_images = self.sample_images[:actual_samples]
-        self.sample_labels = self.sample_labels[:actual_samples]
+        # Try to get sample IDs from the generator
+        # (adapt as needed for your generator)
+        sample_ids = None
+        if hasattr(self.validation_generator, "filenames"):
+            sample_ids = self.validation_generator.filenames[
+                : self.sample_images.shape[0]
+            ]
+        elif hasattr(self.validation_generator, "ids"):
+            sample_ids = self.validation_generator.ids[: self.sample_images.shape[0]]
+        # If sample IDs are not available, fallback to first sample
 
-        print(f"Selected {actual_samples} samples for inference monitoring")
+        selected_idx = None
+        if sample_ids is not None:
+            for idx, sid in enumerate(sample_ids):
+                if "Paraguay_1029191_S1Hand" in sid:
+                    selected_idx = idx
+                    break
+
+        if selected_idx is not None:
+            self.sample_images = np.expand_dims(
+                self.sample_images[selected_idx], axis=0
+            )
+            self.sample_labels = np.expand_dims(
+                self.sample_labels[selected_idx], axis=0
+            )
+            print(
+                "Selected sample 'Paraguay_1029191_S1Hand' for " "inference monitoring."
+            )
+        else:
+            self.sample_images = self.sample_images[:1]
+            self.sample_labels = self.sample_labels[:1]
+            print(
+                "Sample 'Paraguay_1029191_S1Hand' not found. "
+                "Using the first sample instead."
+            )
 
     def on_epoch_end(self, epoch, logs=None):
         """Run inference and save results after each epoch."""
@@ -105,7 +136,8 @@ class SampleInferenceCallback(callbacks.Callback):
     def _save_sample_inference(
         self, epoch, sample_idx, image, label, prediction, save_dir
     ):
-        """Save individual sample inference result."""
+        """Save individual sample inference result with 1x4 visualization:
+        colored image, GT, pred, overlay."""
 
         # Convert prediction to binary mask
         pred_binary = (prediction[:, :, 0] > self.threshold).astype(np.uint8)
@@ -113,52 +145,38 @@ class SampleInferenceCallback(callbacks.Callback):
         # Convert label to binary (handle label smoothing)
         label_binary = (label[:, :, 0] > 0.5).astype(np.uint8)
 
-        # Create visualization
-        fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+        # Create 1 row x 4 columns visualization
+        fig, axes = plt.subplots(1, 4, figsize=(20, 5))
 
-        # Input image (show first 2 channels if multi-channel)
-        if image.shape[2] >= 2:
-            # For SAR data, show VV and VH polarizations
-            axes[0, 0].imshow(image[:, :, 0], cmap="gray")
-            axes[0, 0].set_title("Input Channel 1 (VV)")
-            axes[0, 0].axis("off")
+        # 1. Input image as grayscale (always first channel)
+        img_gray = image[:, :, 0]
+        img_gray_norm = (img_gray - img_gray.min()) / (
+            img_gray.max() - img_gray.min() + 1e-8
+        )
+        axes[0].imshow(img_gray_norm, cmap="gray")
+        axes[0].set_title("Input Image (Gray)")
+        axes[0].axis("off")
 
-            axes[0, 1].imshow(image[:, :, 1], cmap="gray")
-            axes[0, 1].set_title("Input Channel 2 (VH)")
-            axes[0, 1].axis("off")
-        else:
-            axes[0, 0].imshow(image[:, :, 0], cmap="gray")
-            axes[0, 0].set_title("Input Image")
-            axes[0, 0].axis("off")
+        # 2. Ground truth mask
+        axes[1].imshow(label_binary, cmap="Blues", vmin=0, vmax=1)
+        axes[1].set_title("Ground Truth Mask")
+        axes[1].axis("off")
 
-            axes[0, 1].axis("off")
+        # 3. Predicted mask (binary)
+        axes[2].imshow(pred_binary, cmap="Reds", vmin=0, vmax=1)
+        axes[2].set_title(f"Predicted Mask (t={self.threshold})")
+        axes[2].axis("off")
 
-        # Ground truth
-        axes[0, 2].imshow(label_binary, cmap="Blues", vmin=0, vmax=1)
-        axes[0, 2].set_title("Ground Truth")
-        axes[0, 2].axis("off")
-
-        # Prediction (continuous)
-        axes[1, 0].imshow(prediction[:, :, 0], cmap="Reds", vmin=0, vmax=1)
-        axes[1, 0].set_title("Prediction (Raw)")
-        axes[1, 0].axis("off")
-
-        # Prediction (binary)
-        axes[1, 1].imshow(pred_binary, cmap="Reds", vmin=0, vmax=1)
-        axes[1, 1].set_title(f"Prediction (Binary, t={self.threshold})")
-        axes[1, 1].axis("off")
-
-        # Overlay comparison
-        overlay = self._create_overlay(image[:, :, 0], label_binary, pred_binary)
-        axes[1, 2].imshow(overlay)
-        axes[1, 2].set_title("Overlay (GT=Blue, Pred=Red)")
-        axes[1, 2].axis("off")
+        # 4. Overlay: grayscale input image with predicted mask in blue
+        overlay = self._create_overlay(img_gray_norm, pred_binary)
+        axes[3].imshow(overlay)
+        axes[3].set_title("Overlay (Pred=Blue)")
+        axes[3].axis("off")
 
         # Calculate metrics for this sample
         intersection = np.sum(label_binary * pred_binary)
         union = np.sum(label_binary) + np.sum(pred_binary) - intersection
         iou = intersection / (union + 1e-7)
-
         accuracy = np.mean(label_binary == pred_binary)
 
         # Add metrics text
@@ -171,7 +189,7 @@ class SampleInferenceCallback(callbacks.Callback):
             bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgray"),
         )
 
-        plt.suptitle(f"Epoch {epoch} - Sample {sample_idx + 1}", fontsize=16)
+        # plt.suptitle(f"Epoch {epoch} - Sample {sample_idx + 1}", fontsize=16)
         plt.tight_layout()
 
         # Save the figure
@@ -179,26 +197,19 @@ class SampleInferenceCallback(callbacks.Callback):
         plt.savefig(sample_path, dpi=150, bbox_inches="tight")
         plt.close()
 
-    def _create_overlay(self, base_image, ground_truth, prediction):
-        """Create an RGB overlay image showing ground truth and prediction."""
-        # Normalize base image
-        base_norm = cv2.normalize(base_image, None, 0, 255, cv2.NORM_MINMAX).astype(
+    def _create_overlay(self, gray_image, prediction_mask, alpha=0.5):
+        """Overlay predicted mask in blue on the grayscale input
+        image using alpha blending."""
+        # gray_image: normalized grayscale image (float, 0-1)
+        # prediction_mask: binary mask (0 or 1)
+        base_uint8 = (gray_image * 255).astype(np.uint8)
+        overlay = np.stack([base_uint8, base_uint8, base_uint8], axis=2)
+        blue_mask = np.zeros_like(overlay)
+        blue_mask[:, :, 2] = 255  # Blue channel
+        mask = prediction_mask.astype(bool)
+        overlay[mask] = ((1 - alpha) * overlay[mask] + alpha * blue_mask[mask]).astype(
             np.uint8
         )
-
-        # Create RGB image
-        overlay = np.stack([base_norm, base_norm, base_norm], axis=2)
-
-        # Add ground truth in blue channel
-        overlay[:, :, 2] = np.where(ground_truth == 1, 255, overlay[:, :, 2])
-
-        # Add prediction in red channel
-        overlay[:, :, 0] = np.where(prediction == 1, 255, overlay[:, :, 0])
-
-        # Handle overlap (purple for true positives)
-        overlap = (ground_truth == 1) & (prediction == 1)
-        overlay[overlap] = [255, 0, 255]  # Purple
-
         return overlay
 
     def _create_epoch_summary(self, epoch, save_dir, logs):
