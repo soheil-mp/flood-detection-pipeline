@@ -1,10 +1,24 @@
 # Satellite-Based Flood Detection Pipeline
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<div align="center">
 
-![Flood Detection Banner](https://placehold.co/1200x400/007BFF/FFFFFF?text=Flood+Detection+with+SAR+%26+Deep+Learning)
+  ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
+  ![Python](https://img.shields.io/badge/Python-3.8+-green.svg)
+  ![SAR](https://img.shields.io/badge/Data-Sentinel--1%20SAR-orange.svg)
+  ![Optical](https://img.shields.io/badge/Data-Sentinel--2%20Optical-lightblue.svg)
 
-A comprehensive, end-to-end pipeline for detecting and mapping floodwater using satellite imagery. This project leverages state-of-the-art methodologies—from data preprocessing to deep learning-based semantic segmentation—to deliver robust and accurate flood analysis for disaster response and research.
+</div>
+
+
+<div align="center">
+
+#### **Using satellite imagery for detecting and mapping floodwater**
+
+  <img src="./assets/flood-detection.png" alt="Flood Detection Pipeline" width="400">
+
+</div>
+
+
 
 ## Table of Contents
 
@@ -258,8 +272,3 @@ MIT License. See `LICENSE` for details.
 - ESA Copernicus Programme
 - NASA/USGS Landsat Program
 - Cloud to Street (Sen1Floods11)
-
-## Contact
-
-Soheil Mohammadpour - [Your Email/LinkedIn]
-Project Link: [GitHub](https://github.com/your-username/flood-detection-pipeline)
