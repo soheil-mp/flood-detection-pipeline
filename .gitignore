@@ -9,6 +9,8 @@
 *.pyc
 *.h5
 *.geojson
-*.png
+# *.png
+/data/training_data/
+/results/training_logs/
 *.v2
 *.npy
